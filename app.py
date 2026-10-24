@@ -1,4 +1,5 @@
 
+import psycopg
 from flask import Flask
 
 from db import get_db_connection
@@ -20,9 +21,9 @@ def home():
             "server_time": server_time.isoformat(),
         }
 
-    except Exception:
+    except (psycopg.Error, ValueError):
         app.logger.exception("Database connection failed")
-        return {"error": "Database connection failed"}, 500
+        return {"error": "Database temporarily unavailable"}, 503
 
 
 if __name__ == "__main__":
