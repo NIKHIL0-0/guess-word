@@ -72,8 +72,8 @@ function signedIn(user) {
   loadMatches();
 }
 
-async function login() {
-  if (busy) return;
+async function login(options = {}) {
+  if (busy && !options.fromRegister) return;
   busy = true;
   const button = $("#loginButton");
   setBusy(button, true, "Signing in...");
@@ -104,7 +104,7 @@ async function register() {
       body: JSON.stringify({ username: $("#username").value.trim(), password: $("#password").value }),
     });
     showMessage("#authResult", "Account created. Signing you in...", true);
-    await login();
+    await login({ fromRegister: true });
   } catch (error) {
     showMessage("#authResult", error.message);
   } finally {
