@@ -170,10 +170,16 @@ def match_json(row):
     if item["status"] == "won" and item["is_fun_mode"]:
         item["status"] = "lost"
     item["guesses"] = parse_guesses(item["guesses"])
+    solved_in_fun_mode = bool(
+        item["is_fun_mode"]
+        and item["guesses"]
+        and item["secret_word"] in item["guesses"]
+    )
     item["feedback"] = [
         feedback(guess, item["secret_word"]) for guess in item["guesses"]
     ]
-    if item["status"] == "lost" and not item["is_fun_mode"]:
+    item["solved_in_fun_mode"] = solved_in_fun_mode
+    if item["status"] == "won" or solved_in_fun_mode or (item["status"] == "lost" and not item["is_fun_mode"]):
         item["answer"] = item["secret_word"]
     item.pop("secret_word", None)
     return item
@@ -321,7 +327,7 @@ def daily_report():
         cur.execute("""
             SELECT daily_date,
                    COUNT(DISTINCT userid),
-                   SUM(valid_guess_count),
+                   COUNT(DISTINCT secret_word),
                    SUM(CASE WHEN status='won' AND is_fun_mode=FALSE THEN 1 ELSE 0 END)
             FROM guess_word_matches
             GROUP BY daily_date
@@ -331,7 +337,7 @@ def daily_report():
             {
                 "date": str(r[0]),
                 "users": r[1],
-                "guesses": r[2] or 0,
+                "words_tried": r[2] or 0,
                 "correct_guesses": r[3] or 0,
             }
             for r in cur.fetchall()
@@ -345,9 +351,9 @@ def word_report():
         cur.execute("""
             SELECT secret_word,
                    COUNT(*) AS matches,
-                   SUM(valid_guess_count) AS guesses,
                    SUM(CASE WHEN status='won' AND is_fun_mode=FALSE THEN 1 ELSE 0 END) AS wins,
-                   SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS losses
+                   SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS losses,
+                   MIN(valid_guess_count) FILTER (WHERE is_fun_mode=FALSE) AS min_guesses
             FROM guess_word_matches
             GROUP BY secret_word
             ORDER BY secret_word
@@ -356,10 +362,10 @@ def word_report():
             {
                 "word": r[0],
                 "matches": r[1],
-                "guesses": r[2] or 0,
-                "wins": r[3] or 0,
-                "losses": r[4] or 0,
-                "win_rate": round((r[3] or 0) * 100 / r[1], 2) if r[1] else 0,
+                "wins": r[2] or 0,
+                "losses": r[3] or 0,
+                "min_guesses": r[4] or 0,
+                "win_rate": round((r[2] or 0) * 100 / r[1], 2) if r[1] else 0,
             }
             for r in cur.fetchall()
         ])
@@ -371,28 +377,51 @@ def user_report():
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT m.daily_date, m.userid, u.username,
-                   SUM(m.valid_guess_count),
-                   SUM(CASE WHEN m.status='won' AND m.is_fun_mode=FALSE
-                            THEN 1 ELSE 0 END)
-            FROM guess_word_matches AS m
-            JOIN userinfo AS u ON u.userid=m.userid
-            GROUP BY m.daily_date, m.userid, u.username
-            ORDER BY m.daily_date DESC, u.username
+            SELECT u.userid, u.username
+            FROM userinfo AS u
+            ORDER BY u.username
             """
         )
         return jsonify(
             report=[
                 {
-                    "date": str(row[0]),
-                    "userid": row[1],
-                    "username": row[2],
-                    "words_tried": row[3] or 0,
-                    "correct_guesses": row[4] or 0,
+                    "userid": row[0],
+                    "username": row[1],
                 }
                 for row in cur.fetchall()
             ]
         )
+
+
+@app.get("/api/admin/reports/users/<int:userid>")
+@admin_only
+def user_detail_report(userid):
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.daily_date, m.secret_word, m.status, m.is_fun_mode,
+                   m.valid_guess_count
+            FROM guess_word_matches AS m
+            WHERE m.userid=%s
+            ORDER BY m.daily_date DESC, m.created_at DESC
+            """,
+            (userid,),
+        )
+        rows = cur.fetchall()
+    normal_matches = len(rows)
+    normal_wins = sum(1 for row in rows if row[2] == "won" and not row[3])
+    return jsonify(
+        win_rate=round(normal_wins * 100 / normal_matches, 2) if normal_matches else 0,
+        report=[
+            {
+                "date": str(row[0]),
+                "question": row[1],
+                "result": "win" if row[2] == "won" and not row[3] else "loss",
+                "tries": row[4] or 0,
+            }
+            for row in rows
+        ],
+    )
 
 
 @app.get("/")

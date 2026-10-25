@@ -206,9 +206,14 @@ async function selectMatch(id) {
     $("#guess").disabled = finished;
     const answerVisible = Boolean(data.match.answer);
     $("#answerCard").hidden = !answerVisible;
-    if (answerVisible) $("#answerValue").textContent = data.match.answer.toUpperCase();
+    $("#answerCard").classList.toggle("solved", data.match.status === "won" || data.match.solved_in_fun_mode);
+    if (answerVisible) {
+      $("#answerLabel").textContent = data.match.solved_in_fun_mode ? "Solved in fun mode" : "Answer";
+      $("#answerValue").textContent = data.match.answer.toUpperCase();
+    }
     renderBoard(data.match);
     if (data.match.status === "won") showMessage("#result", "You won this match!", true);
+    else if (data.match.solved_in_fun_mode) showMessage("#result", "You cleared the word in fun mode. It is still recorded as a loss.", true);
     else if (data.match.status === "lost" && funMode) showMessage("#result", "Fun mode is active. This match remains a loss.", true);
     else if (answerVisible) showMessage("#result", "This match was revealed and recorded as a loss.", true);
   } catch (error) { showMessage("#result", error.message); }
@@ -245,7 +250,7 @@ async function submitGuess(event) {
     const message = data.status === "won"
       ? "You found the word!"
       : data.fun_solved
-        ? "You found it in fun mode. This match is recorded as a loss."
+        ? "You cleared the word in fun mode. It is recorded as a loss."
         : data.status === "fun"
           ? "Better luck next time. Choose an option."
           : `Feedback: ${data.feedback.join(", ")}`;
@@ -279,25 +284,46 @@ async function loadAdminDashboard() {
     const wordRows = words.report || [];
     $("#dailyRows").replaceChildren(...dailyRows.map((row) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${row.date}</td><td>${row.users}</td><td>${row.guesses}</td><td>${row.correct_guesses}</td>`;
+      tr.innerHTML = `<td>${row.date}</td><td>${row.users}</td><td>${row.words_tried}</td><td>${row.correct_guesses}</td>`;
       return tr;
     }));
-    $("#userRows").replaceChildren(...userRows.map((row) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td><strong>${row.username}</strong></td><td>${row.date}</td><td>${row.words_tried}</td><td>${row.correct_guesses}</td>`;
-      return tr;
-    }));
+    const renderUsers = (filter = "") => {
+      const query = filter.trim().toLowerCase();
+      $("#userList").replaceChildren(...userRows
+        .filter((row) => row.username.toLowerCase().includes(query))
+        .map((row) => {
+          const button = document.createElement("button");
+          button.className = "user-report-button";
+          button.textContent = row.username;
+          button.addEventListener("click", () => loadUserDetail(row));
+          return button;
+        }));
+    };
+    renderUsers();
+    $("#userSearch").addEventListener("input", (event) => renderUsers(event.target.value));
     $("#wordRows").replaceChildren(...wordRows.map((row) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td><strong>${row.word}</strong></td><td>${row.matches}</td><td>${row.guesses}</td><td>${row.wins}</td><td>${row.losses}</td><td>${row.win_rate}%</td>`;
+      tr.innerHTML = `<td><strong>${row.word}</strong></td><td>${row.matches}</td><td>${row.min_guesses || "-"}</td><td>${row.wins}</td><td>${row.losses}</td><td>${row.win_rate}%</td>`;
       return tr;
     }));
     const totalWords = wordRows.length;
-    const totalGuesses = dailyRows.reduce((sum, row) => sum + row.guesses, 0);
-    const totalCorrect = dailyRows.reduce((sum, row) => sum + row.correct_guesses, 0);
-    $("#adminSummary").innerHTML = `<div class="card stat-card"><span>Words in bank</span><strong>${totalWords}</strong></div><div class="card stat-card"><span>Words tried</span><strong>${totalGuesses}</strong></div><div class="card stat-card"><span>Correct guesses</span><strong>${totalCorrect}</strong></div>`;
+    const totalUsers = userRows.length;
+    const totalMatches = wordRows.reduce((sum, row) => sum + row.matches, 0);
+    const totalWins = wordRows.reduce((sum, row) => sum + row.wins, 0);
+    const winRate = totalMatches ? (totalWins * 100 / totalMatches).toFixed(2) : "0.00";
+    $("#adminSummary").innerHTML = `<div class="card stat-card"><span>Users</span><strong>${totalUsers}</strong></div><div class="card stat-card"><span>Words in bank</span><strong>${totalWords}</strong></div><div class="card stat-card"><span>Win rate</span><strong>${winRate}%</strong></div>`;
   } catch (error) {
     showMessage("#adminResult", error.message);
+  }
+
+  async function loadUserDetail(user) {
+    try {
+      const data = await api(`/api/admin/reports/users/${user.userid}`);
+      $("#userDetail").hidden = false;
+      $("#userDetail").innerHTML = `<h3>${user.username} <span class="user-win-rate">win rate - ${data.win_rate}%</span></h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Question</th><th>Result</th></tr></thead><tbody>${(data.report || []).map((row) => `<tr><td>${row.date}</td><td>${row.question}</td><td class="${row.result === "win" ? "success" : ""}">${row.result === "win" ? `win (${row.tries} tries)` : "loss"}</td></tr>`).join("")}</tbody></table></div>`;
+    } catch (error) {
+      showMessage("#adminResult", error.message);
+    }
   }
 }
 

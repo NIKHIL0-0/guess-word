@@ -25,7 +25,7 @@
         </aside>
         <section class="card board-panel">
           <div class="section-heading"><div><h2 id="matchTitle">Choose a match</h2><p id="matchHint" class="muted">Start a new match to begin playing.</p></div><button id="revealButton" class="button text-button" type="button" hidden>Reveal</button></div>
-          <div id="answerCard" class="answer-card" hidden><span>Answer</span><strong id="answerValue"></strong></div>
+          <div id="answerCard" class="answer-card" hidden><span id="answerLabel">Answer</span><strong id="answerValue"></strong></div>
           <div id="board" class="board" aria-live="polite"></div>
           <form id="guessForm" class="guess-form"><input id="guess" maxlength="5" pattern="[A-Za-z]{5}" autocomplete="off" placeholder="Enter a five-letter word" aria-label="Your guess"><button class="button primary" type="submit">Submit guess</button></form>
           <p id="result" class="message" role="status"></p>
