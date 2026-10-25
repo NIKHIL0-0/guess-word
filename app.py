@@ -164,33 +164,65 @@ def me():
     return jsonify(user={"userid": session["userid"], "username": session["username"], "role": session["role"]})
 
 
-def match_json(row):
-    fields = ("match_id", "secret_word", "status", "guesses", "valid_guess_count", "is_fun_mode", "started_at", "completed_at")
+def match_json(row, guess_rows):
+    fields = (
+        "match_id", "game_id", "secret_word", "status", "valid_guess_count",
+        "is_fun_mode", "answer_revealed", "solved_in_fun_mode", "started_at",
+        "completed_at",
+    )
     item = row_dict(row, fields)
+    item["guesses"] = [guess[0] for guess in guess_rows]
+    item["feedback"] = [guess[1] for guess in guess_rows]
     if item["status"] == "won" and item["is_fun_mode"]:
         item["status"] = "lost"
-    item["guesses"] = parse_guesses(item["guesses"])
-    solved_in_fun_mode = bool(
-        item["is_fun_mode"]
-        and item["guesses"]
-        and item["secret_word"] in item["guesses"]
-    )
-    item["feedback"] = [
-        feedback(guess, item["secret_word"]) for guess in item["guesses"]
-    ]
-    item["solved_in_fun_mode"] = solved_in_fun_mode
-    if item["status"] == "won" or solved_in_fun_mode or (item["status"] == "lost" and not item["is_fun_mode"]):
+    if item["status"] == "won" or item["answer_revealed"] or item["solved_in_fun_mode"]:
         item["answer"] = item["secret_word"]
     item.pop("secret_word", None)
     return item
+
+
+def load_match(cur, match_id, userid):
+    cur.execute(
+        """
+        SELECT m.matchid, m.gameid, g.gameword, m.status,
+               COUNT(mg.turn), m.is_fun_mode, m.answer_revealed,
+               m.solved_in_fun_mode, m.started_at, m.completed_at
+        FROM matches AS m
+        JOIN games AS g ON g.gameid=m.gameid
+        LEFT JOIN match_guesses AS mg ON mg.matchid=m.matchid
+        WHERE m.matchid=%s AND m.userid=%s
+        GROUP BY m.matchid, g.gameword
+        """,
+        (match_id, userid),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    cur.execute(
+        """
+        SELECT g.guessword, mg.feedback
+        FROM match_guesses AS mg
+        JOIN guesses AS g ON g.guessid=mg.guessid
+        WHERE mg.matchid=%s
+        ORDER BY mg.turn
+        """,
+        (match_id,),
+    )
+    return match_json(row, cur.fetchall())
 
 
 @app.get("/api/matches")
 @auth()
 def matches():
     with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT match_id,secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at,completed_at FROM guess_word_matches WHERE userid=%s ORDER BY created_at DESC", (session["userid"],))
-        return jsonify(matches=[match_json(row) for row in cur.fetchall()])
+        cur.execute(
+            "SELECT matchid FROM matches WHERE userid=%s ORDER BY started_at DESC",
+            (session["userid"],),
+        )
+        match_ids = [row[0] for row in cur.fetchall()]
+        return jsonify(matches=[
+            load_match(cur, match_id, session["userid"]) for match_id in match_ids
+        ])
 
 
 @app.post("/api/matches")
@@ -198,32 +230,48 @@ def matches():
 def start_match():
     day = today()
     with get_db_connection() as conn, conn.cursor() as cur:
-        if isinstance(conn, psycopg.Connection):
-            cur.execute(
-                "SELECT pg_advisory_xact_lock(%s)",
-                (int(session["userid"]),),
-            )
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", (int(session["userid"]),))
         cur.execute(
-            "SELECT COUNT(*) FROM guess_word_matches "
+            "SELECT COUNT(*) FROM matches "
             "WHERE userid=%s AND daily_date=%s",
             (session["userid"], day),
         )
         if cur.fetchone()[0] >= 3:
             return error("Maximum of 3 new matches per day reached.", 429)
-        secret = random.choice(tuple(WORD_LIST))
-        cur.execute("INSERT INTO guess_word_matches(userid,secret_word,daily_date,guesses) VALUES (%s,%s,%s,%s) RETURNING match_id,secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at,completed_at",
-                    (session["userid"], secret, day, json.dumps([])))
-        return jsonify(match=match_json(cur.fetchone())), 201
+        cur.execute(
+            """
+            SELECT gameid, gameword
+            FROM games
+            WHERE gameid NOT IN (
+                SELECT gameid FROM matches WHERE userid=%s
+            )
+            ORDER BY random()
+            LIMIT 1
+            """,
+            (session["userid"],),
+        )
+        game = cur.fetchone()
+        if not game:
+            return error("No new words are available for this user.", 409)
+        cur.execute(
+            """
+            INSERT INTO matches (gameid, userid, daily_date)
+            VALUES (%s, %s, %s)
+            RETURNING matchid
+            """,
+            (game[0], session["userid"], day),
+        )
+        match_id = cur.fetchone()[0]
+        return jsonify(match=load_match(cur, match_id, session["userid"])), 201
 
 
 @app.get("/api/matches/<int:match_id>")
 @auth()
 def status(match_id):
     with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT match_id,secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at,completed_at FROM guess_word_matches WHERE match_id=%s AND userid=%s", (match_id, session["userid"]))
-        row = cur.fetchone()
-    if not row: return error("Match not found.", 404)
-    return jsonify(match=match_json(row))
+        match = load_match(cur, match_id, session["userid"])
+    if not match: return error("Match not found.", 404)
+    return jsonify(match=match)
 
 
 @app.post("/api/matches/<int:match_id>/resume")
@@ -239,56 +287,95 @@ def guess(match_id):
     value = body().get("guess")
     if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z]{5}", value):
         return error("Guess must be five letters.")
-    value = value.lower()
-    if value not in WORD_LIST:
-        return error("That is not a valid English word.", 422)
+    value = value.upper()
     with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT guessid FROM guesses WHERE guessword=%s", (value,))
+        guess_row = cur.fetchone()
+        if not guess_row:
+            return error("That is not a valid English word.", 422)
         cur.execute(
-            "SELECT secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at "
-            "FROM guess_word_matches WHERE match_id=%s AND userid=%s FOR UPDATE",
+            """
+            SELECT m.gameid, g.gameword, m.status, m.is_fun_mode,
+                   m.solved_in_fun_mode, m.started_at
+            FROM matches AS m
+            JOIN games AS g ON g.gameid=m.gameid
+            WHERE m.matchid=%s AND m.userid=%s
+            FOR UPDATE OF m
+            """,
             (match_id, session["userid"]),
         )
         row = cur.fetchone()
-        if not row: return error("Match not found.", 404)
-        secret, state, old, count, fun, started = row
-        guesses = parse_guesses(old)
-        if state != "active" and not (state == "lost" and fun):
+        if not row:
+            return error("Match not found.", 404)
+        game_id, secret, state, fun, solved_fun, started = row
+        cur.execute(
+            "SELECT COUNT(*) FROM match_guesses WHERE matchid=%s",
+            (match_id,),
+        )
+        count = cur.fetchone()[0]
+        if state != "ongoing" and not (state == "lost" and fun):
             return error("Match is already complete.", 409)
-        guesses.append(value); count += 1
+        turn = count + 1
         won = value == secret
-        exhausted = count >= 5 and not fun
-        # A standard loss deliberately becomes an unlimited, non-competitive fun game.
-        new_state = "won" if won and not fun else ("lost" if fun or exhausted else "active")
-        cur.execute("UPDATE guess_word_matches SET guesses=%s,valid_guess_count=%s,status=%s,completed_at=CASE WHEN %s <> 'active' THEN CURRENT_TIMESTAMP ELSE completed_at END,is_fun_mode=CASE WHEN %s AND %s THEN TRUE ELSE is_fun_mode END WHERE match_id=%s AND userid=%s",
-                    (json.dumps(guesses), count, new_state, new_state, exhausted, fun, match_id, session["userid"]))
+        exhausted = turn >= 5 and not fun and not won
+        new_status = "won" if won and not fun else ("lost" if fun or exhausted else "ongoing")
+        is_fun_mode = fun or exhausted
+        solved_in_fun_mode = solved_fun or (won and fun)
+        feedback_value = feedback(value.lower(), secret.lower())
+        cur.execute(
+            """
+            INSERT INTO match_guesses
+                (matchid, turn, guessid, feedback, correct_letters, partial_correct_letters)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                match_id, turn, guess_row[0], json.dumps(feedback_value),
+                feedback_value.count("correct"), feedback_value.count("present"),
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE matches
+            SET status=%s, is_fun_mode=%s, solved_in_fun_mode=%s,
+                last_activity_at=CURRENT_TIMESTAMP,
+                completed_at=CASE
+                    WHEN %s IN ('won', 'lost') AND NOT %s THEN CURRENT_TIMESTAMP
+                    ELSE completed_at
+                END
+            WHERE matchid=%s AND userid=%s
+            """,
+            (
+                new_status, is_fun_mode, solved_in_fun_mode, new_status,
+                is_fun_mode, match_id, session["userid"],
+            ),
+        )
         result = {
-            "guess": value,
-            "feedback": feedback(value, secret),
-            "status": new_state,
-            "attempt": count,
+            "guess": value.lower(),
+            "feedback": feedback_value,
+            "status": "fun" if exhausted else new_status,
+            "attempt": turn,
         }
-        if won and fun:
+        if solved_in_fun_mode and won:
             result["fun_solved"] = True
             result["status"] = "lost"
-        if exhausted and not won and not fun:
-            cur.execute("UPDATE guess_word_matches SET is_fun_mode=TRUE WHERE match_id=%s AND userid=%s", (match_id, session["userid"]))
-            result["status"] = "fun"
         if won and not fun:
-            result["ranking"] = ranking(cur, secret, started, count, match_id)
+            result["ranking"] = ranking(cur, game_id, started, turn, match_id)
         return jsonify(result)
 
 
-def ranking(cur, secret, started, count, current_match_id):
+def ranking(cur, game_id, started, count, current_match_id):
     cur.execute(
         """
-        SELECT started_at, completed_at, valid_guess_count
-        FROM guess_word_matches
-        WHERE secret_word=%s
-          AND status='won'
-          AND is_fun_mode=FALSE
-          AND match_id<>%s
+        SELECT m.started_at, m.completed_at, COUNT(mg.turn)
+        FROM matches AS m
+        LEFT JOIN match_guesses AS mg ON mg.matchid=m.matchid
+        WHERE m.gameid=%s
+          AND m.status='won'
+          AND m.is_fun_mode=FALSE
+          AND m.matchid<>%s
+        GROUP BY m.matchid
         """,
-        (secret, current_match_id),
+        (game_id, current_match_id),
     )
     rows = cur.fetchall()
     def seconds(start, end):
@@ -314,10 +401,23 @@ def ranking(cur, secret, started, count, current_match_id):
 @auth()
 def reveal(match_id):
     with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE guess_word_matches SET status='lost',is_fun_mode=FALSE,completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE match_id=%s AND userid=%s RETURNING secret_word,status", (match_id, session["userid"]))
+        cur.execute(
+            """
+            UPDATE matches
+            SET status='lost', is_fun_mode=FALSE, answer_revealed=TRUE,
+                completed_at=COALESCE(completed_at, CURRENT_TIMESTAMP),
+                last_activity_at=CURRENT_TIMESTAMP
+            WHERE matchid=%s AND userid=%s
+            RETURNING gameid, status
+            """,
+            (match_id, session["userid"]),
+        )
         row = cur.fetchone()
-    if not row: return error("Match not found.", 404)
-    return jsonify(secret=row[0], status=row[1])
+        if not row:
+            return error("Match not found.", 404)
+        cur.execute("SELECT gameword FROM games WHERE gameid=%s", (row[0],))
+        secret = cur.fetchone()[0]
+    return jsonify(secret=secret.lower(), status=row[1])
 
 
 @app.get("/api/admin/reports/daily")
@@ -327,9 +427,9 @@ def daily_report():
         cur.execute("""
             SELECT daily_date,
                    COUNT(DISTINCT userid),
-                   COUNT(DISTINCT secret_word),
+                   COUNT(DISTINCT gameid),
                    SUM(CASE WHEN status='won' AND is_fun_mode=FALSE THEN 1 ELSE 0 END)
-            FROM guess_word_matches
+            FROM matches
             GROUP BY daily_date
             ORDER BY daily_date DESC
         """)
@@ -349,14 +449,18 @@ def daily_report():
 def word_report():
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute("""
-            SELECT secret_word,
-                   COUNT(*) AS matches,
-                   SUM(CASE WHEN status='won' AND is_fun_mode=FALSE THEN 1 ELSE 0 END) AS wins,
-                   SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS losses,
-                   MIN(valid_guess_count) FILTER (WHERE is_fun_mode=FALSE) AS min_guesses
-            FROM guess_word_matches
-            GROUP BY secret_word
-            ORDER BY secret_word
+            SELECT g.gameword,
+                   COUNT(m.matchid) AS matches,
+                   SUM(CASE WHEN m.status='won' AND m.is_fun_mode=FALSE THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN m.status='lost' THEN 1 ELSE 0 END) AS losses,
+                   MIN((
+                       SELECT COUNT(*) FROM match_guesses AS mg
+                       WHERE mg.matchid=m.matchid
+                   )) FILTER (WHERE m.is_fun_mode=FALSE) AS min_guesses
+            FROM games AS g
+            LEFT JOIN matches AS m ON m.gameid=g.gameid
+            GROUP BY g.gameword
+            ORDER BY g.gameword
         """)
         return jsonify(report=[
             {
@@ -399,11 +503,12 @@ def user_detail_report(userid):
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT m.daily_date, m.secret_word, m.status, m.is_fun_mode,
-                   m.valid_guess_count
-            FROM guess_word_matches AS m
+            SELECT m.daily_date, g.gameword, m.status, m.is_fun_mode,
+                   (SELECT COUNT(*) FROM match_guesses AS mg WHERE mg.matchid=m.matchid)
+            FROM matches AS m
+            JOIN games AS g ON g.gameid=m.gameid
             WHERE m.userid=%s
-            ORDER BY m.daily_date DESC, m.created_at DESC
+            ORDER BY m.daily_date DESC, m.started_at DESC
             """,
             (userid,),
         )

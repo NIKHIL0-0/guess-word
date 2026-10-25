@@ -40,38 +40,20 @@ def get_db_connection():
 
 
 def ensure_schema():
-    """Create the application game table and indexes if needed."""
+    """Verify that the normalized application tables are available."""
     with get_db_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS guess_word_matches (
-                match_id BIGSERIAL PRIMARY KEY,
-                userid INTEGER NOT NULL,
-                secret_word VARCHAR(5) NOT NULL,
-                status VARCHAR(12) NOT NULL DEFAULT 'active',
-                guesses JSONB NOT NULL DEFAULT '[]'::jsonb,
-                valid_guess_count INTEGER NOT NULL DEFAULT 0,
-                is_fun_mode BOOLEAN NOT NULL DEFAULT FALSE,
-                daily_date DATE NOT NULL,
-                started_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                completed_at TIMESTAMPTZ,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema='public'
+              AND table_name IN ('userinfo', 'games', 'guesses', 'matches', 'match_guesses')
             """
         )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS gw_matches_user_day "
-            "ON guess_word_matches(userid, daily_date)"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS gw_matches_rank "
-            "ON guess_word_matches(secret_word, status, is_fun_mode)"
-        )
-        cur.execute(
-            "UPDATE guess_word_matches SET status='lost', is_fun_mode=FALSE "
-            "WHERE status='revealed'"
-        )
-        cur.execute(
-            "UPDATE guess_word_matches SET status='lost' "
-            "WHERE status='won' AND is_fun_mode=TRUE"
+        tables = {row[0] for row in cur.fetchall()}
+    required = {"userinfo", "games", "guesses", "matches", "match_guesses"}
+    missing = required - tables
+    if missing:
+        raise RuntimeError(
+            "Missing normalized database tables: " + ", ".join(sorted(missing))
         )

@@ -198,6 +198,8 @@ async function selectMatch(id) {
     const matchList = (await api("/api/matches")).matches;
     selectedMatch = data.match; matchId = id;
     renderMatches(matchList);
+    $("#ranking").hidden = true;
+    $("#ranking").replaceChildren();
     const funMode = data.match.status === "lost" && data.match.is_fun_mode;
     const finished = data.match.status === "won" || (data.match.status === "lost" && !data.match.is_fun_mode);
     $("#matchTitle").textContent = `Match #${userMatchNumbers.get(id) || "selected"}`;
@@ -215,7 +217,7 @@ async function selectMatch(id) {
     if (data.match.status === "won") showMessage("#result", "You won this match!", true);
     else if (data.match.solved_in_fun_mode) showMessage("#result", "You cleared the word in fun mode. It is still recorded as a loss.", true);
     else if (data.match.status === "lost" && funMode) showMessage("#result", "Fun mode is active. This match remains a loss.", true);
-    else if (answerVisible) showMessage("#result", "This match was revealed and recorded as a loss.", true);
+    else if (answerVisible) showMessage("#result", "This match was revealed and recorded as a loss.");
   } catch (error) { showMessage("#result", error.message); }
 }
 
