@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import re
 from datetime import datetime, timedelta
 from functools import wraps
@@ -12,9 +11,8 @@ from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from psycopg.errors import UniqueViolation
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from db import ensure_schema, get_db_connection
-
 from dotenv import load_dotenv
+from db import ensure_schema, get_db_connection
 
 load_dotenv()
 
@@ -23,8 +21,10 @@ app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "local-development-key-change-me"),
     SESSION_PERMANENT=True,
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
-    SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=os.getenv("FLASK_ENV") == "production",
-    SESSION_COOKIE_SAMESITE="Lax", SESSION_USE_SIGNER=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=os.getenv("FLASK_ENV") == "production",
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_USE_SIGNER=True,
 )
 csrf = CSRFProtect(app)
 
@@ -51,7 +51,9 @@ def auth(required=True):
             if required and not session.get("userid"):
                 return error("Authentication required.", 401)
             return fn(*args, **kwargs)
+
         return wrapped
+
     return decorator
 
 
@@ -62,6 +64,7 @@ def admin_only(fn):
         if session.get("role") != "admin":
             return error("Administrator access required.", 403)
         return fn(*args, **kwargs)
+
     return wrapped
 
 
@@ -71,15 +74,6 @@ def today():
 
 def row_dict(row, fields):
     return dict(zip(fields, row)) if row else None
-
-
-def parse_guesses(value):
-    if isinstance(value, list):
-        return value
-    try:
-        return json.loads(value or "[]")
-    except (TypeError, ValueError):
-        return []
 
 
 def feedback(guess, secret):
@@ -117,7 +111,9 @@ def csrf_token():
 
 @app.post("/api/auth/register")
 def register():
-    data = body(); username, password = data.get("username"), data.get("password")
+    data = body()
+    username = data.get("username")
+    password = data.get("password")
     if not isinstance(username, str) or not isinstance(password, str):
         return error("Username and password are required.")
     username = username.strip()
@@ -127,8 +123,11 @@ def register():
         return error("Password must contain 5+ chars, a letter, a number, and $, %, or *.")
     try:
         with get_db_connection() as conn, conn.cursor() as cur:
-            cur.execute("INSERT INTO userinfo (username,password_hash) VALUES (%s,%s) RETURNING userid,username,role",
-                        (username, generate_password_hash(password)))
+            cur.execute(
+                "INSERT INTO userinfo (username,password_hash) "
+                "VALUES (%s,%s) RETURNING userid,username,role",
+                (username, generate_password_hash(password)),
+            )
             user = cur.fetchone()
     except UniqueViolation:
         return error("Username is already taken.", 409)
@@ -139,11 +138,17 @@ def register():
 def login():
     data = body()
     with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT userid,username,password_hash,role FROM userinfo WHERE username=%s", (str(data.get("username", "")).strip(),))
+        cur.execute(
+            "SELECT userid,username,password_hash,role "
+            "FROM userinfo WHERE username=%s",
+            (str(data.get("username", "")).strip(),),
+        )
         user = cur.fetchone()
     if not user or not check_password_hash(user[2], str(data.get("password", ""))):
         return error("Invalid username or password.", 401)
-    session.clear(); session.update(userid=user[0], username=user[1], role=user[3]); session.permanent = True
+    session.clear()
+    session.update(userid=user[0], username=user[1], role=user[3])
+    session.permanent = True
     return jsonify(user=row_dict(user, ("userid", "username", "role")))
 
 
@@ -266,14 +271,14 @@ def start_match():
 def status(match_id):
     with get_db_connection() as conn, conn.cursor() as cur:
         match = load_match(cur, match_id, session["userid"])
-    if not match: return error("Match not found.", 404)
+    if not match:
+        return error("Match not found.", 404)
     return jsonify(match=match)
 
 
 @app.post("/api/matches/<int:match_id>/resume")
 @auth()
 def resume(match_id):
-    """Explicit resume endpoint; ownership is enforced by the same status query."""
     return status(match_id)
 
 
