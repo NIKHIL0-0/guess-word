@@ -245,7 +245,7 @@ async function submitGuess(event) {
     const message = data.status === "won"
       ? "You found the word!"
       : data.fun_solved
-        ? "You found it in fun mode. This match remains a loss."
+        ? "You found it in fun mode. This match is recorded as a loss."
         : data.status === "fun"
           ? "Better luck next time. Choose an option."
           : `Feedback: ${data.feedback.join(", ")}`;

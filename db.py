@@ -71,3 +71,7 @@ def ensure_schema():
             "UPDATE guess_word_matches SET status='lost', is_fun_mode=FALSE "
             "WHERE status='revealed'"
         )
+        cur.execute(
+            "UPDATE guess_word_matches SET status='lost' "
+            "WHERE status='won' AND is_fun_mode=TRUE"
+        )

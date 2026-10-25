@@ -167,6 +167,8 @@ def me():
 def match_json(row):
     fields = ("match_id", "secret_word", "status", "guesses", "valid_guess_count", "is_fun_mode", "started_at", "completed_at")
     item = row_dict(row, fields)
+    if item["status"] == "won" and item["is_fun_mode"]:
+        item["status"] = "lost"
     item["guesses"] = parse_guesses(item["guesses"])
     item["feedback"] = [
         feedback(guess, item["secret_word"]) for guess in item["guesses"]
@@ -261,6 +263,7 @@ def guess(match_id):
         }
         if won and fun:
             result["fun_solved"] = True
+            result["status"] = "lost"
         if exhausted and not won and not fun:
             cur.execute("UPDATE guess_word_matches SET is_fun_mode=TRUE WHERE match_id=%s AND userid=%s", (match_id, session["userid"]))
             result["status"] = "fun"
