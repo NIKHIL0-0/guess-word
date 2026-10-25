@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Play · GuessWord</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/game"><span class="brand-mark">G</span><span>Guess<span class="brand-accent">Word</span></span></a>
+      <span class="eyebrow">Daily word challenge</span>
+    </header>
+    <section id="game">
+      <div class="game-header">
+        <div><p class="eyebrow">Your dashboard</p><h1>Ready to guess?</h1><p id="who" class="muted"></p></div>
+        <button id="logoutButton" class="button ghost" type="button">Sign out</button>
+      </div>
+      <div class="game-layout">
+        <aside class="card matches-panel">
+          <div class="section-heading"><h2>Your matches</h2><span id="matchCount" class="count">0</span></div>
+          <button id="newMatchButton" class="button primary full" type="button">+ New match</button>
+          <div id="matches" class="matches-list"></div>
+        </aside>
+        <section class="card board-panel">
+          <div class="section-heading"><div><h2 id="matchTitle">Choose a match</h2><p id="matchHint" class="muted">Start a new match to begin playing.</p></div><button id="revealButton" class="button text-button" type="button" hidden>Reveal</button></div>
+          <div id="board" class="board" aria-live="polite"></div>
+          <form id="guessForm" class="guess-form"><input id="guess" maxlength="5" pattern="[A-Za-z]{5}" autocomplete="off" placeholder="Enter a five-letter word" aria-label="Your guess"><button class="button primary" type="submit">Submit guess</button></form>
+          <p id="result" class="message" role="status"></p>
+          <div class="legend"><span><i class="tile correct"></i> Correct</span><span><i class="tile present"></i> Wrong place</span><span><i class="tile absent"></i> Not in word</span></div>
+          <div id="ranking" class="ranking-card" hidden></div>
+        </section>
+      </div>
+      <pre id="adminReport" class="card admin-report" hidden></pre>
+    </section>
+  </main>
+  <div id="winModal" class="modal-backdrop" hidden>
+    <section class="win-modal" role="dialog" aria-modal="true" aria-labelledby="winTitle">
+      <button id="closeWinButton" class="modal-close" type="button" aria-label="Close">×</button>
+      <div class="win-icon">★</div>
+      <p class="eyebrow">Match complete</p>
+      <h2 id="winTitle">You won!</h2>
+      <div id="winStats" class="win-stats"></div>
+      <button id="continueButton" class="button primary full" type="button">Continue playing</button>
+    </section>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

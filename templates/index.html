@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Guess the Word</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Guess the Word home">
+        <span class="brand-mark">G</span>
+        <span>Guess<span class="brand-accent">Word</span></span>
+      </a>
+      <span class="eyebrow">Daily word challenge</span>
+    </header>
+
+    <section id="auth" class="auth-layout">
+      <div class="intro">
+        <p class="eyebrow">Welcome back</p>
+        <h1>Find the hidden<br><span>five-letter word.</span></h1>
+        <p class="intro-copy">Use logic, make your guesses count, and climb the rankings.</p>
+        <div class="rules">
+          <span><b>5</b> standard tries</span>
+          <span><b>3</b> matches per day</span>
+        </div>
+      </div>
+      <div class="card auth-card">
+        <h2>Play now</h2>
+        <p class="muted">Sign in or create your player account.</p>
+        <label for="username">Username</label>
+        <input id="username" autocomplete="username" placeholder="e.g. wordsmith">
+        <label for="password">Password</label>
+        <div class="password-field"><input id="password" type="password" autocomplete="current-password" placeholder="Your password"><button id="passwordToggle" class="password-toggle" type="button" aria-label="Show password">Show</button></div>
+        <p class="password-hint">At least 5 characters, including a letter, number, and one of $, % or *.</p>
+        <div class="auth-actions">
+          <button id="loginButton" class="button primary" type="button">Sign in</button>
+          <button id="registerButton" class="button secondary" type="button">Create account</button>
+        </div>
+        <p id="authResult" class="message" role="alert"></p>
+      </div>
+    </section>
+
+    <section id="game" hidden>
+      <div class="game-header">
+        <div>
+          <p class="eyebrow">Your dashboard</p>
+          <h1>Ready to guess?</h1>
+          <p id="who" class="muted"></p>
+        </div>
+        <button id="logoutButton" class="button ghost" type="button">Sign out</button>
+      </div>
+      <div class="game-layout">
+        <aside class="card matches-panel">
+          <div class="section-heading"><h2>Your matches</h2><span id="matchCount" class="count">0</span></div>
+          <button id="newMatchButton" class="button primary full" type="button">+ New match</button>
+          <div id="matches" class="matches-list"></div>
+        </aside>
+        <section class="card board-panel">
+          <div class="section-heading"><div><h2 id="matchTitle">Choose a match</h2><p id="matchHint" class="muted">Start a new match to begin playing.</p></div><button id="revealButton" class="button text-button" type="button" hidden>Reveal</button></div>
+          <div id="board" class="board" aria-live="polite"></div>
+          <form id="guessForm" class="guess-form">
+            <input id="guess" maxlength="5" pattern="[A-Za-z]{5}" autocomplete="off" placeholder="Enter a five-letter word" aria-label="Your guess">
+            <button class="button primary" type="submit">Submit guess</button>
+          </form>
+          <p id="result" class="message" role="status"></p>
+          <div class="legend"><span><i class="tile correct"></i> Correct</span><span><i class="tile present"></i> Wrong place</span><span><i class="tile absent"></i> Not in word</span></div>
+          <div id="ranking" class="ranking-card" hidden></div>
+        </section>
+      </div>
+      <pre id="adminReport" class="card admin-report" hidden></pre>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

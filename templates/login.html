@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Sign in · GuessWord</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/login"><span class="brand-mark">G</span><span>Guess<span class="brand-accent">Word</span></span></a>
+      <span class="eyebrow">Daily word challenge</span>
+    </header>
+    <section id="auth" class="auth-layout">
+      <div class="intro">
+        <p class="eyebrow">Welcome back</p>
+        <h1>Find the hidden<br><span>five-letter word.</span></h1>
+        <p class="intro-copy">Use logic, make your guesses count, and climb the rankings.</p>
+        <div class="rules"><span><b>5</b> standard tries</span><span><b>3</b> matches per day</span></div>
+      </div>
+      <div class="card auth-card">
+        <h2>Play now</h2>
+        <p class="muted">Sign in or create your player account.</p>
+        <label for="username">Username</label>
+        <input id="username" autocomplete="username" placeholder="e.g. wordsmith">
+        <label for="password">Password</label>
+        <div class="password-field"><input id="password" type="password" autocomplete="current-password" placeholder="Your password"><button id="passwordToggle" class="password-toggle" type="button">Show</button></div>
+        <p class="password-hint">At least 5 characters, including a letter, number, and one of $, % or *.</p>
+        <div class="auth-actions"><button id="loginButton" class="button primary" type="button">Sign in</button><button id="registerButton" class="button secondary" type="button">Create account</button></div>
+        <p id="authResult" class="message" role="alert"></p>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
