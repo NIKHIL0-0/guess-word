@@ -67,3 +67,7 @@ def ensure_schema():
             "CREATE INDEX IF NOT EXISTS gw_matches_rank "
             "ON guess_word_matches(secret_word, status, is_fun_mode)"
         )
+        cur.execute(
+            "UPDATE guess_word_matches SET status='lost', is_fun_mode=FALSE "
+            "WHERE status='revealed'"
+        )

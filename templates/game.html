@@ -25,10 +25,13 @@
         </aside>
         <section class="card board-panel">
           <div class="section-heading"><div><h2 id="matchTitle">Choose a match</h2><p id="matchHint" class="muted">Start a new match to begin playing.</p></div><button id="revealButton" class="button text-button" type="button" hidden>Reveal</button></div>
+          <div id="answerCard" class="answer-card" hidden><span>Answer</span><strong id="answerValue"></strong></div>
           <div id="board" class="board" aria-live="polite"></div>
           <form id="guessForm" class="guess-form"><input id="guess" maxlength="5" pattern="[A-Za-z]{5}" autocomplete="off" placeholder="Enter a five-letter word" aria-label="Your guess"><button class="button primary" type="submit">Submit guess</button></form>
           <p id="result" class="message" role="status"></p>
           <div class="legend"><span><i class="tile correct"></i> Correct</span><span><i class="tile present"></i> Wrong place</span><span><i class="tile absent"></i> Not in word</span></div>
+          <label class="key-toggle"><input id="keyToggle" type="checkbox"> Show letter key</label>
+          <div id="letterKey" class="letter-key" hidden aria-label="Letter key"></div>
           <div id="ranking" class="ranking-card" hidden></div>
         </section>
       </div>
@@ -44,6 +47,19 @@
       <button id="continueButton" class="button primary full" type="button">Continue playing</button>
     </section>
   </div>
-  <script src="/static/app.js?v=4"></script>
+  <div id="lossModal" class="modal-backdrop" hidden>
+    <section class="win-modal" role="dialog" aria-modal="true" aria-labelledby="lossTitle">
+      <button id="closeLossButton" class="modal-close" type="button" aria-label="Close">×</button>
+      <div class="loss-icon">!</div>
+      <p class="eyebrow">Match complete</p>
+      <h2 id="lossTitle">Better luck next time!</h2>
+      <p class="muted">You can keep guessing for fun, or reveal the answer.</p>
+      <div class="loss-actions">
+        <button id="funModeButton" class="button primary" type="button">Play in fun mode</button>
+        <button id="lossRevealButton" class="button secondary" type="button">Reveal answer</button>
+      </div>
+    </section>
+  </div>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>

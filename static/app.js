@@ -120,7 +120,8 @@ async function logout() {
 function renderBoard(match) {
   const guesses = match?.guesses || [];
   const feedbackRows = match?.feedback || [];
-  $("#board").replaceChildren(...Array.from({ length: 5 }, (_, rowIndex) => {
+  const rowCount = Math.max(5, guesses.length + 1);
+  $("#board").replaceChildren(...Array.from({ length: rowCount }, (_, rowIndex) => {
     const row = document.createElement("div");
     row.className = "row";
     const word = guesses[rowIndex] || "";
@@ -132,6 +133,29 @@ function renderBoard(match) {
       return tile;
     }));
     return row;
+  }));
+  $("#board").scrollTop = $("#board").scrollHeight;
+  renderLetterKey(match);
+}
+
+function renderLetterKey(match) {
+  const states = new Map();
+  const priority = { absent: 1, present: 2, correct: 3 };
+  (match?.guesses || []).forEach((guess, rowIndex) => {
+    [...guess.toLowerCase()].forEach((letter, index) => {
+      const state = match.feedback?.[rowIndex]?.[index];
+      if (state && (!states.has(letter) || priority[state] > priority[states.get(letter)])) {
+        states.set(letter, state);
+      }
+    });
+  });
+  const letters = "abcdefghijklmnopqrstuvwxyz".split("");
+  $("#letterKey").replaceChildren(...letters.map((letter) => {
+    const key = document.createElement("span");
+    key.className = `letter-key-item ${states.get(letter) === "absent" ? "dimmed" : ""}`;
+    key.textContent = letter;
+    key.setAttribute("aria-label", `${letter}${states.has(letter) ? `, ${states.get(letter)}` : ", not tried"}`);
+    return key;
   }));
 }
 
@@ -174,15 +198,19 @@ async function selectMatch(id) {
     const matchList = (await api("/api/matches")).matches;
     selectedMatch = data.match; matchId = id;
     renderMatches(matchList);
-    const finished = ["won", "lost", "revealed"].includes(data.match.status);
+    const funMode = data.match.status === "lost" && data.match.is_fun_mode;
+    const finished = data.match.status === "won" || (data.match.status === "lost" && !data.match.is_fun_mode);
     $("#matchTitle").textContent = `Match #${userMatchNumbers.get(id) || "selected"}`;
     $("#matchHint").textContent = `${data.match.status} · ${data.match.valid_guess_count || 0} guesses`;
     $("#revealButton").hidden = finished;
     $("#guess").disabled = finished;
+    const answerVisible = Boolean(data.match.answer);
+    $("#answerCard").hidden = !answerVisible;
+    if (answerVisible) $("#answerValue").textContent = data.match.answer.toUpperCase();
     renderBoard(data.match);
     if (data.match.status === "won") showMessage("#result", "You won this match!", true);
-    else if (data.match.status === "lost") showMessage("#result", "Standard tries are over. Fun mode is active.", true);
-    else if (data.match.status === "revealed") showMessage("#result", "This match has been revealed.", true);
+    else if (data.match.status === "lost" && funMode) showMessage("#result", "Fun mode is active. This match remains a loss.", true);
+    else if (answerVisible) showMessage("#result", "This match was revealed and recorded as a loss.", true);
   } catch (error) { showMessage("#result", error.message); }
 }
 
@@ -213,9 +241,21 @@ async function submitGuess(event) {
       $("#winStats").innerHTML = `<div><span>Your ranking</span><strong>${rank.rank} <small>of ${rank.total_population}</small></strong></div>`;
       $("#winModal").hidden = false;
     }
-    showMessage("#result", data.status === "won" ? "You found the word!" : data.status === "fun" ? "Fun mode unlocked." : `Feedback: ${data.feedback.join(", ")}`, data.status === "won");
+    if (data.status === "fun") showLossModal();
+    const message = data.status === "won"
+      ? "You found the word!"
+      : data.fun_solved
+        ? "You found it in fun mode. This match remains a loss."
+        : data.status === "fun"
+          ? "Better luck next time. Choose an option."
+          : `Feedback: ${data.feedback.join(", ")}`;
+    showMessage("#result", message, data.status === "won" || data.fun_solved);
     await selectMatch(matchId);
   } catch (error) { showMessage("#result", error.message); }
+}
+
+function showLossModal() {
+  $("#lossModal").hidden = false;
 }
 
 async function revealMatch() {
@@ -229,15 +269,22 @@ async function revealMatch() {
 
 async function loadAdminDashboard() {
   try {
-    const [daily, words] = await Promise.all([
+    const [daily, users, words] = await Promise.all([
       api("/api/admin/reports/daily"),
+      api("/api/admin/reports/users"),
       api("/api/admin/reports/words"),
     ]);
     const dailyRows = daily.report || [];
+    const userRows = users.report || [];
     const wordRows = words.report || [];
     $("#dailyRows").replaceChildren(...dailyRows.map((row) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${row.date}</td><td>${row.users}</td><td>${row.guesses}</td><td>${row.correct_guesses}</td>`;
+      return tr;
+    }));
+    $("#userRows").replaceChildren(...userRows.map((row) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><strong>${row.username}</strong></td><td>${row.date}</td><td>${row.words_tried}</td><td>${row.correct_guesses}</td>`;
       return tr;
     }));
     $("#wordRows").replaceChildren(...wordRows.map((row) => {
@@ -268,8 +315,23 @@ $("#passwordToggle")?.addEventListener("click", () => {
 $("#password")?.addEventListener("keydown", (event) => { if (event.key === "Enter") login(); });
 $("#closeWinButton")?.addEventListener("click", () => { $("#winModal").hidden = true; });
 $("#continueButton")?.addEventListener("click", () => { $("#winModal").hidden = true; });
+$("#funModeButton")?.addEventListener("click", async () => {
+  $("#lossModal").hidden = true;
+  if (matchId) await selectMatch(matchId);
+});
+$("#lossRevealButton")?.addEventListener("click", async () => {
+  $("#lossModal").hidden = true;
+  await revealMatch();
+});
+$("#closeLossButton")?.addEventListener("click", () => { $("#lossModal").hidden = true; });
+$("#keyToggle")?.addEventListener("change", (event) => {
+  $("#letterKey").hidden = !event.target.checked;
+});
 $("#winModal")?.addEventListener("click", (event) => {
   if (event.target === $("#winModal")) $("#winModal").hidden = true;
+});
+$("#lossModal")?.addEventListener("click", (event) => {
+  if (event.target === $("#lossModal")) $("#lossModal").hidden = true;
 });
 document.addEventListener("keydown", (event) => {
   if (!$("#game") || document.activeElement === $("#guess")) return;

@@ -171,6 +171,8 @@ def match_json(row):
     item["feedback"] = [
         feedback(guess, item["secret_word"]) for guess in item["guesses"]
     ]
+    if item["status"] == "lost" and not item["is_fun_mode"]:
+        item["answer"] = item["secret_word"]
     item.pop("secret_word", None)
     return item
 
@@ -248,14 +250,21 @@ def guess(match_id):
         won = value == secret
         exhausted = count >= 5 and not fun
         # A standard loss deliberately becomes an unlimited, non-competitive fun game.
-        new_state = "won" if won else ("lost" if fun or exhausted else "active")
+        new_state = "won" if won and not fun else ("lost" if fun or exhausted else "active")
         cur.execute("UPDATE guess_word_matches SET guesses=%s,valid_guess_count=%s,status=%s,completed_at=CASE WHEN %s <> 'active' THEN CURRENT_TIMESTAMP ELSE completed_at END,is_fun_mode=CASE WHEN %s AND %s THEN TRUE ELSE is_fun_mode END WHERE match_id=%s AND userid=%s",
                     (json.dumps(guesses), count, new_state, new_state, exhausted, fun, match_id, session["userid"]))
-        result = {"guess": value, "feedback": feedback(value, secret), "status": new_state, "attempt": count}
+        result = {
+            "guess": value,
+            "feedback": feedback(value, secret),
+            "status": new_state,
+            "attempt": count,
+        }
+        if won and fun:
+            result["fun_solved"] = True
         if exhausted and not won and not fun:
             cur.execute("UPDATE guess_word_matches SET is_fun_mode=TRUE WHERE match_id=%s AND userid=%s", (match_id, session["userid"]))
             result["status"] = "fun"
-        if won:
+        if won and not fun:
             result["ranking"] = ranking(cur, secret, started, count, match_id)
         return jsonify(result)
 
@@ -296,7 +305,7 @@ def ranking(cur, secret, started, count, current_match_id):
 @auth()
 def reveal(match_id):
     with get_db_connection() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE guess_word_matches SET status='revealed',completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE match_id=%s AND userid=%s RETURNING secret_word,status", (match_id, session["userid"]))
+        cur.execute("UPDATE guess_word_matches SET status='lost',is_fun_mode=FALSE,completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP) WHERE match_id=%s AND userid=%s RETURNING secret_word,status", (match_id, session["userid"]))
         row = cur.fetchone()
     if not row: return error("Match not found.", 404)
     return jsonify(secret=row[0], status=row[1])
@@ -335,7 +344,7 @@ def word_report():
                    COUNT(*) AS matches,
                    SUM(valid_guess_count) AS guesses,
                    SUM(CASE WHEN status='won' AND is_fun_mode=FALSE THEN 1 ELSE 0 END) AS wins,
-                   SUM(CASE WHEN status IN ('lost', 'revealed') THEN 1 ELSE 0 END) AS losses
+                   SUM(CASE WHEN status='lost' THEN 1 ELSE 0 END) AS losses
             FROM guess_word_matches
             GROUP BY secret_word
             ORDER BY secret_word
@@ -351,6 +360,36 @@ def word_report():
             }
             for r in cur.fetchall()
         ])
+
+
+@app.get("/api/admin/reports/users")
+@admin_only
+def user_report():
+    with get_db_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.daily_date, m.userid, u.username,
+                   SUM(m.valid_guess_count),
+                   SUM(CASE WHEN m.status='won' AND m.is_fun_mode=FALSE
+                            THEN 1 ELSE 0 END)
+            FROM guess_word_matches AS m
+            JOIN userinfo AS u ON u.userid=m.userid
+            GROUP BY m.daily_date, m.userid, u.username
+            ORDER BY m.daily_date DESC, u.username
+            """
+        )
+        return jsonify(
+            report=[
+                {
+                    "date": str(row[0]),
+                    "userid": row[1],
+                    "username": row[2],
+                    "words_tried": row[3] or 0,
+                    "correct_guesses": row[4] or 0,
+                }
+                for row in cur.fetchall()
+            ]
+        )
 
 
 @app.get("/")
