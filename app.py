@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 from flask import Flask, jsonify, redirect, render_template, request, session
-from flask_session import Session
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from psycopg.errors import UniqueViolation
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -22,14 +21,11 @@ load_dotenv()
 app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "local-development-key-change-me"),
-    SESSION_TYPE="filesystem", SESSION_PERMANENT=True,
+    SESSION_PERMANENT=True,
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=os.getenv("FLASK_ENV") == "production",
     SESSION_COOKIE_SAMESITE="Lax", SESSION_USE_SIGNER=True,
 )
-os.makedirs(app.instance_path, exist_ok=True)
-app.config["SESSION_FILE_DIR"] = os.path.join(app.instance_path, "flask_session")
-Session(app)
 csrf = CSRFProtect(app)
 
 # A bundled, deliberately conservative word list. It can be replaced by WORD_LIST_FILE.
@@ -565,4 +561,4 @@ with app.app_context():
     ensure_schema()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
