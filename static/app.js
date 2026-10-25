@@ -70,7 +70,6 @@ function signedIn(user) {
   $("#who").textContent = `${user.username} · ${user.role}`;
   $("#game").hidden = false;
   loadMatches();
-  if (user.role === "admin") loadAdminReport();
 }
 
 async function login() {
@@ -226,14 +225,6 @@ async function revealMatch() {
     showMessage("#result", `The answer was ${data.secret.toUpperCase()}.`, true);
     await selectMatch(matchId);
   } catch (error) { showMessage("#result", error.message); }
-}
-
-async function loadAdminReport() {
-  try {
-    const data = await api("/api/admin/reports/daily");
-    $("#adminReport").hidden = false;
-    $("#adminReport").textContent = `Admin daily report\n${JSON.stringify(data.report, null, 2)}`;
-  } catch (_) {}
 }
 
 async function loadAdminDashboard() {

@@ -233,8 +233,11 @@ def guess(match_id):
     if value not in WORD_LIST:
         return error("That is not a valid English word.", 422)
     with get_db_connection() as conn, conn.cursor() as cur:
-        lock = "" if conn.__class__.__name__ == "SQLiteConnection" else " FOR UPDATE"
-        cur.execute("SELECT secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at FROM guess_word_matches WHERE match_id=%s AND userid=%s" + lock, (match_id, session["userid"]))
+        cur.execute(
+            "SELECT secret_word,status,guesses,valid_guess_count,is_fun_mode,started_at "
+            "FROM guess_word_matches WHERE match_id=%s AND userid=%s FOR UPDATE",
+            (match_id, session["userid"]),
+        )
         row = cur.fetchone()
         if not row: return error("Match not found.", 404)
         secret, state, old, count, fun, started = row
