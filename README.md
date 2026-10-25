@@ -6,17 +6,6 @@ A Wordle-style five-letter word game built with Flask, PostgreSQL/Supabase, and 
 
 [Play GuessWord](https://guess-word-livid.vercel.app/game)
 
-## Features
-
-- User registration and login
-- Daily match limit
-- No repeated answer words for the same user
-- Colored Wordle-style feedback
-- Fun mode after five unsuccessful guesses
-- Answer reveal with permanent result display
-- Rankings for normal-mode wins
-- Admin reports for daily, user, and per-word activity
-
 ## Local setup
 
 1. Create a virtual environment and install dependencies:
